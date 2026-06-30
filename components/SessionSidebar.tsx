@@ -281,12 +281,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
 
-  const commitCustomPath = useCallback(async () => {
-    const path = customPathValue.trim();
-    if (!path || customPathValidating) return;
-
+  // Shared cwd-switch core: validates the path (server calls allowFileRoot),
+  // then setSelectedCwd. Throws Error(message) on failure so callers surface
+  // errors in their own UI. Reuses customPathValidating as the in-flight guard.
+  const changeCwd = useCallback(async (path: string): Promise<void> => {
+    if (customPathValidating) return;
     setCustomPathValidating(true);
-    setCustomPathError(null);
     try {
       const res = await fetch("/api/cwd/validate", {
         method: "POST",
@@ -295,19 +295,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       });
       const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
       if (!res.ok || data.error) {
-        setCustomPathError(data.error ?? `HTTP ${res.status}`);
-        return;
+        throw new Error(data.error ?? `HTTP ${res.status}`);
       }
       setSelectedCwd(data.cwd ?? path);
+    } finally {
+      setCustomPathValidating(false);
+    }
+  }, [customPathValidating]);
+
+  const commitCustomPath = useCallback(async () => {
+    const path = customPathValue.trim();
+    if (!path || customPathValidating) return;
+    setCustomPathError(null);
+    try {
+      await changeCwd(path);
       setCustomPathOpen(false);
       setCustomPathValue("");
       setDropdownOpen(false);
     } catch (e) {
       setCustomPathError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating]);
+  }, [customPathValue, customPathValidating, changeCwd]);
 
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -797,6 +805,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
+                onChangeCwd={changeCwd}
               />
             </div>
           )}
