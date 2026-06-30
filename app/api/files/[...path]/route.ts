@@ -8,6 +8,7 @@ import {
   normalizeSlashes,
 } from "@/lib/file-access";
 import { isIgnoredName } from "@/lib/file-filter";
+import { streamUpload } from "@/lib/file-upload";
 
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
@@ -463,5 +464,39 @@ export async function GET(
     return NextResponse.json({ entries, path: filePath });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const { path: segments } = await params;
+    const targetDir = filePathFromSegments(segments);
+    const overwrite = request.nextUrl.searchParams.get("overwrite") === "true";
+
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isFilePathAllowed(targetDir, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(targetDir);
+    } catch {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!stat.isDirectory()) {
+      return NextResponse.json({ error: "Target is not a directory" }, { status: 400 });
+    }
+
+    const result = await streamUpload(targetDir, allowedRoots, request, overwrite);
+    return NextResponse.json(result, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
   }
 }
