@@ -54,6 +54,7 @@ function handleOneFile(
       resume(): void;
       on(event: "close", listener: () => void): void;
       on(event: "data", listener: (chunk: Buffer) => void): void;
+      on(event: "error", listener: (err: Error) => void): void;
       on(event: "limit", listener: () => void): void;
       pipe(destination: NodeJS.WritableStream): NodeJS.WritableStream;
     };
@@ -102,7 +103,16 @@ function handleOneFile(
 
     let oversized = false;
     let received = 0;
+    let settled = false;
+    let errored = false;
     const ws = fs.createWriteStream(dest);
+
+    const settle = (record: () => void): void => {
+      if (settled) return;
+      settled = true;
+      record();
+      resolveFile();
+    };
 
     file.on("data", (chunk: Buffer) => {
       received += chunk.length;
@@ -110,22 +120,31 @@ function handleOneFile(
     file.on("limit", () => {
       oversized = true;
     });
+    file.on("error", () => {
+      // busboy file stream errored — propagate to ws so it settles via its own handlers
+      errored = true;
+      ws.destroy(new Error("upload stream error"));
+    });
 
     file.pipe(ws);
 
     ws.on("close", () => {
-      if (oversized) {
-        try { fs.unlinkSync(dest); } catch { /* ignore */ }
-        result.errors.push({ path: dest, error: "exceeds size limit" });
-      } else {
-        result.uploaded.push({ path: dest, size: received });
-      }
-      resolveFile();
+      settle(() => {
+        if (errored) return;
+        if (oversized) {
+          try { fs.unlinkSync(dest); } catch { /* ignore */ }
+          result.errors.push({ path: dest, error: "exceeds size limit" });
+        } else {
+          result.uploaded.push({ path: dest, size: received });
+        }
+      });
     });
     ws.on("error", (err) => {
-      try { fs.unlinkSync(dest); } catch { /* ignore */ }
-      result.errors.push({ path: dest, error: err.message });
-      resolveFile();
+      settle(() => {
+        errored = true;
+        try { fs.unlinkSync(dest); } catch { /* ignore */ }
+        result.errors.push({ path: dest, error: err.message });
+      });
     });
   });
 }
@@ -177,6 +196,7 @@ export function streamUpload(
     bbAny.on("error", (err) => reject(err));
 
     const bodyNodeStream = Readable.fromWeb(request.body as NodeReadableStream<Uint8Array>);
+    bodyNodeStream.on("error", (err) => bb.destroy(err));
     bodyNodeStream.pipe(bb);
   });
 }
