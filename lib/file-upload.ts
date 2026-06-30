@@ -176,6 +176,10 @@ export function streamUpload(
     };
 
     bbAny.on("file", (...args: unknown[]) => {
+      if (args[0] !== "files") {
+        (args[1] as NodeJS.ReadableStream).resume();
+        return;
+      }
       const fileStream = args[1] as NodeJS.ReadableStream;
       const third = args[2];
       const filename =

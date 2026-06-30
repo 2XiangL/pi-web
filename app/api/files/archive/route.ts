@@ -61,9 +61,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const members = resolved.flatMap((p) => collectArchiveMembers(p, ""));
+  const members = resolved
+    .flatMap((p) => collectArchiveMembers(p, ""))
+    .filter((m) => {
+      try {
+        return isFilePathAllowed(fs.realpathSync(m.absPath), allowedRoots);
+      } catch {
+        return false;
+      }
+    });
   const archiveNodeStream = createArchiveStream(members);
-  archiveNodeStream.on("error", () => {});
+  archiveNodeStream.on("error", (err) => {
+    console.error("archive stream error:", err);
+  });
 
   const webStream = Readable.toWeb(archiveNodeStream) as unknown as ReadableStream<Uint8Array>;
   const fileName = zipFileName(resolved, allowedRoots);
