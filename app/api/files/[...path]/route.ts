@@ -7,14 +7,7 @@ import {
   isWindowsAbsolutePath,
   normalizeSlashes,
 } from "@/lib/file-access";
-
-const IGNORED_NAMES = new Set([
-  "node_modules", ".git", ".next", "dist", "build", "__pycache__",
-  ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
-  "target", "vendor", ".DS_Store", ".git",
-]);
-
-const IGNORED_SUFFIXES = [".pyc"];
+import { isIgnoredName } from "@/lib/file-filter";
 
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
@@ -424,7 +417,7 @@ export async function GET(
 
     const names = fs.readdirSync(filePath);
     const entries = names
-      .filter((name) => !IGNORED_NAMES.has(name) && !IGNORED_SUFFIXES.some((s) => name.endsWith(s)))
+      .filter((name) => !isIgnoredName(name))
       .map((name) => {
         const full = path.join(filePath, name);
         try {
