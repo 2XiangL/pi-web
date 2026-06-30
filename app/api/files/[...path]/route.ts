@@ -139,18 +139,27 @@ function encodeHeaderValue(value: string): string {
   );
 }
 
-function getContentDisposition(filePath: string): string {
+function getContentDisposition(
+  filePath: string,
+  disposition: "inline" | "attachment" = "inline"
+): string {
   const fileName = path.basename(filePath);
   const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "download";
-  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
 }
 
-function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null): Response {
+function streamFile(
+  filePath: string,
+  stat: fs.Stats,
+  contentType: string,
+  rangeHeader: string | null,
+  disposition: "inline" | "attachment" = "inline"
+): Response {
   const headers = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
-    "Content-Disposition": getContentDisposition(filePath),
+    "Content-Disposition": getContentDisposition(filePath, disposition),
   };
 
   if (!rangeHeader) {
@@ -408,6 +417,18 @@ export async function GET(
           "X-Accel-Buffering": "no",
         },
       });
+    }
+
+    if (type === "download") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      const mime =
+        getImageMime(filePath) ??
+        getAudioMime(filePath) ??
+        getDocumentMime(filePath) ??
+        "application/octet-stream";
+      return streamFile(filePath, stat, mime, request.headers.get("range"), "attachment");
     }
 
     // type === "list"
