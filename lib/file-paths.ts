@@ -32,3 +32,23 @@ export function getRelativeFilePath(filePath: string, cwd?: string): string {
 export function joinFilePath(parent: string, child: string): string {
   return `${normalizeFilePathSlashes(parent).replace(/\/$/, "")}/${child}`;
 }
+
+export function getParentDirPath(filePath: string): string | null {
+  const normalized = normalizeFilePathSlashes(filePath).replace(/\/+$/, "");
+  if (normalized === "") return null;
+  // Already at posix root.
+  if (normalized === "/") return null;
+  // Windows drive root after trailing-slash strip (e.g. "C:").
+  if (/^[a-zA-Z]:$/.test(normalized)) return null;
+
+  const lastSlash = normalized.lastIndexOf("/");
+  if (lastSlash <= 0) {
+    // lastSlash === 0 → "/foo", whose parent is "/".
+    // lastSlash === -1 → no separator at all (not absolute); nothing above.
+    return lastSlash === 0 ? "/" : null;
+  }
+  const parent = normalized.slice(0, lastSlash);
+  // Windows: a bare "C:" parent is drive-relative and ambiguous; normalize to "C:/".
+  if (/^[a-zA-Z]:$/.test(parent)) return parent + "/";
+  return parent;
+}
