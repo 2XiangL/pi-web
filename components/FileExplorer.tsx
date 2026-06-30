@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
-import { encodeFilePathForApi, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
+import { encodeFilePathForApi, getRelativeFilePath, getParentDirPath, joinFilePath } from "@/lib/file-paths";
 
 interface FileEntry {
   name: string;
@@ -25,6 +25,7 @@ interface Props {
   onOpenFile: (filePath: string, fileName: string) => void;
   refreshKey?: number;
   onAtMention?: (relativePath: string) => void;
+  onChangeCwd?: (path: string) => void;
 }
 
 interface Status {
@@ -124,6 +125,8 @@ function TreeNode({
   cwd,
   onOpenFile,
   onAtMention,
+  onChangeCwd,
+  cwdBusy,
   expandedPaths,
   onToggleExpanded,
   refreshKey,
@@ -136,6 +139,8 @@ function TreeNode({
   cwd: string;
   onOpenFile: (filePath: string, fileName: string) => void;
   onAtMention?: (relativePath: string) => void;
+  onChangeCwd?: (path: string) => void;
+  cwdBusy: boolean;
   expandedPaths: Set<string>;
   onToggleExpanded: (fullPath: string, open: boolean) => void;
   refreshKey?: number;
@@ -241,68 +246,101 @@ function TreeNode({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
-        {hovered && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDownloadNode(node); }}
-            title={node.isDir ? "Download as ZIP" : "Download"}
-            style={{
-              position: "absolute",
-              right: onAtMention ? 64 : 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 20,
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </button>
-        )}
-        {onAtMention && hovered && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onAtMention(getRelativeFilePath(node.fullPath, cwd)); }}
-            title="Insert path into chat"
-            style={{
-              position: "absolute",
-              right: 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "0 8px",
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--accent)",
-              cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
-            </svg>
-            mention
-          </button>
-        )}
+        {(() => {
+          // Hover-action cluster, stacked leftward from the right edge.
+          // mention (~76px, widest) → download (20px) → workspace (20px).
+          const canSetWorkspace = node.isDir && !!onChangeCwd;
+          const MENTION_W = 76;
+          const SQUARE_W = 20;
+          const GAP = 4;
+          let rightEdge = 4;
+          const mentionRight = rightEdge;
+          if (onAtMention) rightEdge += MENTION_W + GAP;
+          const downloadRight = rightEdge;
+          if (canSetWorkspace) rightEdge += SQUARE_W + GAP;
+          const workspaceRight = rightEdge;
+          const squareBtn: React.CSSProperties = {
+            position: "absolute",
+            top: "50%",
+            transform: "translateY(-50%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: SQUARE_W,
+            height: SQUARE_W,
+            background: "var(--bg-panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text-muted)",
+            cursor: "pointer",
+          };
+          return (
+            <>
+              {canSetWorkspace && hovered && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onChangeCwd!(node.fullPath); }}
+                  disabled={cwdBusy}
+                  title="Set as workspace"
+                  style={{ ...squareBtn, right: workspaceRight, opacity: cwdBusy ? 0.5 : 1, cursor: cwdBusy ? "default" : "pointer" }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </button>
+              )}
+              {hovered && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDownloadNode(node); }}
+                  disabled={cwdBusy}
+                  title={node.isDir ? "Download as ZIP" : "Download"}
+                  style={{ ...squareBtn, right: downloadRight, opacity: cwdBusy ? 0.5 : 1, cursor: cwdBusy ? "default" : "pointer" }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+              )}
+              {onAtMention && hovered && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAtMention(getRelativeFilePath(node.fullPath, cwd)); }}
+                  title="Insert path into chat"
+                  style={{
+                    position: "absolute",
+                    right: mentionRight,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    padding: "0 8px",
+                    height: SQUARE_W,
+                    background: "var(--bg-panel)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+                  </svg>
+                  mention
+                </button>
+              )}
+            </>
+          );
+        })()}
       </div>
       {node.isDir && open && (
         <div>
@@ -314,6 +352,8 @@ function TreeNode({
               cwd={cwd}
               onOpenFile={onOpenFile}
               onAtMention={onAtMention}
+              onChangeCwd={onChangeCwd}
+              cwdBusy={cwdBusy}
               expandedPaths={expandedPaths}
               onToggleExpanded={onToggleExpanded}
               refreshKey={refreshKey}
@@ -333,7 +373,52 @@ function TreeNode({
   );
 }
 
-export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props) {
+function UpDirRow({ parentDir, busy, onNavigate }: {
+  parentDir: string;
+  busy: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onClick={() => { if (!busy) onNavigate(parentDir); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={`Go up to ${parentDir}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        paddingLeft: 8,
+        paddingRight: 8,
+        height: 24,
+        cursor: busy ? "default" : "pointer",
+        background: hovered ? "var(--bg-hover)" : "transparent",
+        borderRadius: 4,
+        userSelect: "none",
+        opacity: busy ? 0.6 : 1,
+      }}
+    >
+      <span style={{ width: 10, flexShrink: 0, display: "flex", justifyContent: "center" }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)"
+          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="2 6 5 3 8 6" />
+        </svg>
+      </span>
+      <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+        <FolderIcon size={14} open={false} />
+      </span>
+      <span
+        style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}
+        title={parentDir}
+      >
+        ..
+      </span>
+    </div>
+  );
+}
+
+export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention, onChangeCwd }: Props) {
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -355,6 +440,20 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     statusTimerRef.current = setTimeout(() => setStatus(null), 4000);
   }, []);
+
+  const handleChangeCwd = useCallback(async (path: string) => {
+    if (!onChangeCwd || busy) return;
+    setBusy(true);
+    try {
+      await onChangeCwd(path);
+    } catch (e) {
+      flashStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }, [onChangeCwd, busy, flashStatus]);
+
+  const parentDir = onChangeCwd ? getParentDirPath(cwd) : null;
 
   const handleToggleExpanded = useCallback((fullPath: string, open: boolean) => {
     setExpandedPaths((prev) => {
@@ -550,6 +649,9 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
           minHeight: 40,
         }}
       >
+        {parentDir !== null && (
+          <UpDirRow parentDir={parentDir} busy={busy} onNavigate={handleChangeCwd} />
+        )}
         {roots.map((node) => (
           <TreeNode
             key={node.fullPath}
@@ -558,6 +660,8 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
             cwd={cwd}
             onOpenFile={onOpenFile}
             onAtMention={onAtMention}
+            onChangeCwd={handleChangeCwd}
+            cwdBusy={busy}
             expandedPaths={expandedPaths}
             onToggleExpanded={handleToggleExpanded}
             refreshKey={effectiveRefresh}
@@ -566,7 +670,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention }: Props
             onDownloadNode={downloadNode}
           />
         ))}
-        {roots.length === 0 && (
+        {roots.length === 0 && parentDir === null && (
           <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
             {dragOver ? "Drop files to upload" : "No files found"}
           </div>
