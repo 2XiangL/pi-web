@@ -162,6 +162,7 @@ export function streamUpload(
     const bb = busboy({
       headers: Object.fromEntries(request.headers) as Record<string, string>,
       limits: { fileSize: MAX_UPLOAD_BYTES },
+      preservePath: true,
     });
 
     // Cast bb to a minimal emitter so the listener is accepted regardless of
