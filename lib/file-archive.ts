@@ -49,7 +49,6 @@ export function createArchiveStream(members: ArchiveMember[]): Readable {
       if (!st.isFile()) continue;
       archive.append(fs.createReadStream(m.absPath), { name: m.entryName, mode: st.mode });
     } catch {
-      // skip unreadable members
     }
   }
   archive.finalize();

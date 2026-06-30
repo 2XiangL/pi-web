@@ -40,6 +40,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Request body must be a JSON object" }, { status: 400 });
+  }
+
   const rawPaths = Array.isArray(body.paths) ? (body.paths as unknown[]) : null;
   if (!rawPaths || rawPaths.length === 0 || rawPaths.some((p) => typeof p !== "string")) {
     return NextResponse.json({ error: "paths must be a non-empty array of strings" }, { status: 400 });
@@ -59,9 +63,7 @@ export async function POST(req: NextRequest) {
 
   const members = resolved.flatMap((p) => collectArchiveMembers(p, ""));
   const archiveNodeStream = createArchiveStream(members);
-  archiveNodeStream.on("error", () => {
-    // stream error after headers are sent cannot be recovered; client gets a truncated zip
-  });
+  archiveNodeStream.on("error", () => {});
 
   const webStream = Readable.toWeb(archiveNodeStream) as unknown as ReadableStream<Uint8Array>;
   const fileName = zipFileName(resolved, allowedRoots);
